@@ -1087,6 +1087,7 @@ func (m *Model) syncVisibleWidget() tea.Cmd {
 		}
 		tasks = append(tasks, components.RenderTask{
 			ID:         strconv.Itoa(absoluteIndex),
+			CacheKey:   book.BookFile + "|" + path,
 			SourcePath: path,
 		})
 	}

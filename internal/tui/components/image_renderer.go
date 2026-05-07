@@ -14,6 +14,7 @@ import (
 
 type RenderTask struct {
 	ID         string
+	CacheKey   string
 	SourcePath string
 }
 
@@ -97,7 +98,11 @@ func (r *ImageRenderer) Sync(req SyncRequest) tea.Cmd {
 
 	cmds := make([]tea.Cmd, 0, len(req.Tasks))
 	for _, task := range req.Tasks {
-		cacheKey := fmt.Sprintf("%s|%dx%d|%dx%d|%v", task.SourcePath, req.Width, req.Height, targetPixelWidth, targetPixelHeight, protocol)
+		cacheBase := task.CacheKey
+		if cacheBase == "" {
+			cacheBase = task.SourcePath
+		}
+		cacheKey := fmt.Sprintf("%s|%dx%d|%dx%d|%v", cacheBase, req.Width, req.Height, targetPixelWidth, targetPixelHeight, protocol)
 		if cached, ok := r.cache[cacheKey]; ok {
 			r.rendered[task.ID] = cached
 			continue
