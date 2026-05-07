@@ -102,5 +102,5 @@ go run ./examples/minimal
 ```bash
 cd /home/runner/work/Kindria/Kindria/image-renderer
 go test ./...
-go build ./examples/minimal
+go build -o /tmp/image-renderer-minimal ./examples/minimal
 ```
