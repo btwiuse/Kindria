@@ -70,7 +70,16 @@ go run .
 
 - Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - Development setup and workflows: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
+- Image renderer component (design + usage): [`docs/IMAGE_RENDERER_COMPONENT.md`](docs/IMAGE_RENDERER_COMPONENT.md)
 - In-app key hints are shown in each screen (Library, Add Book, Kindle, Themes)
+
+## Examples
+
+- Minimal reusable image component example:
+
+  ```bash
+  go run ./examples/image_renderer_minimal
+  ```
 
 ## Terminal Notes
 
