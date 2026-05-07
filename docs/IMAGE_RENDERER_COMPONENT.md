@@ -14,13 +14,13 @@ This keeps rendering concerns isolated from business/UI state.
 
 ## Implementation Principles
 
-## 1) Async rendering via Bubble Tea commands
+### 1) Async rendering via Bubble Tea commands
 
 - `Sync(SyncRequest)` builds a `tea.Batch(...)` of render commands.
 - Each command opens image source (`imaging.Open`), resizes it, renders via `go-termimg`, and returns internal message `coverLoadedMsg`.
 - Bubble Tea event loop receives those messages; your model forwards them to `ImageRenderer.Update(msg)`.
 
-## 2) Terminal-adaptive sizing
+### 2) Terminal-adaptive sizing
 
 `SyncRequest` accepts character-cell size (`Width`/`Height`) and optional cell-pixel size (`CellPixelWidth`/`CellPixelHeight`).
 
@@ -30,7 +30,7 @@ Sizing strategy:
 - else fallback to `termimg.QueryTerminalFeatures()` font metrics;
 - else fallback to char-cell size directly.
 
-## 3) Cache + in-flight deduplication
+### 3) Cache + in-flight deduplication
 
 - `cache` stores rendered outputs by a cache key containing source identity + render dimensions + protocol.
 - `pending` prevents duplicate concurrent renders for the same key.
@@ -38,7 +38,7 @@ Sizing strategy:
 
 `RenderTask.CacheKey` lets caller define logical identity (for example, include book identity + path), avoiding accidental cache collisions.
 
-## 4) Overlay drawing
+### 4) Overlay drawing
 
 - `Overlay([]OverlayPlacement)` returns ANSI cursor-positioned output (`\x1b[row;colH...`).
 - Caller appends this overlay string to base layout string in `View()`.

@@ -139,7 +139,7 @@ func (r *ImageRenderer) Sync(req SyncRequest) tea.Cmd {
 			cover.SetSize(req.Width, req.Height).SetProtocol(protocol)
 			coverRendered, err := cover.Render()
 			if err != nil {
-				log.Printf("Err rendering cover: %v ", err)
+				log.Printf("Error rendering cover: %v ", err)
 				return coverLoadedMsg{id: taskID, key: key, data: ""}
 			}
 			return coverLoadedMsg{id: taskID, key: key, data: coverRendered}
