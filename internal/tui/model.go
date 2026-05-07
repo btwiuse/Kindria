@@ -2,12 +2,12 @@ package tui
 
 import (
 	metadata "Kindria/internal/core/api/books"
+	"Kindria/internal/tui/components"
 	uiTheme "Kindria/internal/tui/theme"
 	"Kindria/internal/utils"
 	kindle "Kindria/tools"
 	"context"
 	"fmt"
-	"image/color"
 	"log"
 	"os"
 	"path/filepath"
@@ -15,14 +15,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blacktop/go-termimg"
 	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/paginator"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/disintegration/imaging"
 	"golang.org/x/sys/unix"
 )
 
@@ -77,41 +75,31 @@ type MainModel struct {
 }
 
 type Model struct {
-	books              []*metadata.Package
-	allBooks           []*metadata.Package
-	currentView        string
-	cursor             int
-	sideBarCursor      int
-	activeArea         int
-	width              int
-	sideBarWidth       int
-	screenHeight       int
-	contentWidth       int
-	height             int
-	lowBarHeight       int
-	dynamicCardWidth   int
-	dynamicCardHeight  int
-	cellPixelWidth     int
-	cellPixelHeight    int
-	cols               int
-	paginator          paginator.Model
-	covers             map[int]string
-	coverRenderCache   map[string]string
-	coverRenderPending map[string]struct{}
-	handler            metadata.Handler
-	MenuOptions        []string
-	start              int
-	end                int
-	ratingInput        textinput.Model
-	showRatingInput    bool
-}
-
-type coversLoadedMsg map[int]string
-
-type coverLoadedMsg struct {
-	index int
-	key   string
-	data  string
+	books             []*metadata.Package
+	allBooks          []*metadata.Package
+	currentView       string
+	cursor            int
+	sideBarCursor     int
+	activeArea        int
+	width             int
+	sideBarWidth      int
+	screenHeight      int
+	contentWidth      int
+	height            int
+	lowBarHeight      int
+	dynamicCardWidth  int
+	dynamicCardHeight int
+	cellPixelWidth    int
+	cellPixelHeight   int
+	cols              int
+	paginator         paginator.Model
+	coverRenderer     *components.ImageRenderer
+	handler           metadata.Handler
+	MenuOptions       []string
+	start             int
+	end               int
+	ratingInput       textinput.Model
+	showRatingInput   bool
 }
 
 type importLoaderDelayMsg struct{}
@@ -216,17 +204,15 @@ func InitialModel(b []*metadata.Package, h *metadata.Handler) *MainModel {
 	fp.ShowSize = false
 	applyFilePickerTheme(&fp)
 	library := &Model{
-		books:              b,
-		paginator:          p,
-		covers:             make(map[int]string),
-		coverRenderCache:   make(map[string]string),
-		coverRenderPending: make(map[string]struct{}),
-		handler:            *h,
-		activeArea:         int(sideFocus),
-		MenuOptions:        []string{"Home", "Books", "To-Be Read", "Add Book", "Synchronize \nKindle", "Themes"},
-		showRatingInput:    false,
-		ratingInput:        t,
-		allBooks:           b,
+		books:           b,
+		paginator:       p,
+		coverRenderer:   components.NewImageRenderer(),
+		handler:         *h,
+		activeArea:      int(sideFocus),
+		MenuOptions:     []string{"Home", "Books", "To-Be Read", "Add Book", "Synchronize \nKindle", "Themes"},
+		showRatingInput: false,
+		ratingInput:     t,
+		allBooks:        b,
 	}
 	return &MainModel{
 		state:         homeState,
@@ -811,6 +797,10 @@ func (m *Model) Init() tea.Cmd {
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.coverRenderer.Update(msg) {
+		return m, nil
+	}
+
 	var cmdSync tea.Cmd
 	var cmdPaginator tea.Cmd
 	var cmds []tea.Cmd
@@ -963,14 +953,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ratingInput.Focus()
 			return m, tea.ClearScreen
 		}
-	case coversLoadedMsg:
-		m.covers = msg
-		return m, nil
-	case coverLoadedMsg:
-		delete(m.coverRenderPending, msg.key)
-		m.coverRenderCache[msg.key] = msg.data
-		m.covers[msg.index] = msg.data
-		return m, nil
 	}
 
 	if !skipPaginatorUpdate {
@@ -990,15 +972,15 @@ func (m Model) View() string {
 	m.start, m.end = m.paginator.GetSliceBounds(len(m.books))
 	booksCards := make([]string, 0)
 	type coverRender struct {
-		row  int
-		col  int
-		data string
+		row int
+		col int
+		id  string
 	}
 	coverRenders := make([]coverRender, 0)
 
 	for i := range m.books[m.start:m.end] {
 		absoluteIndex := i + m.start
-		cover, _ := m.covers[absoluteIndex]
+		cover := m.coverRenderer.Rendered(strconv.Itoa(absoluteIndex))
 
 		style := list.
 			Width(m.dynamicCardWidth).
@@ -1027,9 +1009,9 @@ func (m Model) View() string {
 			rowIdx := i / m.cols
 			colIdx := i % m.cols
 			coverRenders = append(coverRenders, coverRender{
-				row:  rowIdx,
-				col:  colIdx,
-				data: cover,
+				row: rowIdx,
+				col: colIdx,
+				id:  strconv.Itoa(absoluteIndex),
 			})
 		}
 	}
@@ -1072,22 +1054,20 @@ func (m Model) View() string {
 	coverRowOffset := 1
 	coverColOffset := 3
 
-	var overlay strings.Builder
+	placements := make([]components.OverlayPlacement, 0, len(coverRenders))
 	for _, c := range coverRenders {
 		row := gridStartRow + (c.row * cardHeight) + coverRowOffset
 		col := gridStartCol + (c.col * cardWidth) + coverColOffset
-
-		overlay.WriteString("\x1b[")
-		overlay.WriteString(strconv.Itoa(row))
-		overlay.WriteString(";")
-		overlay.WriteString(strconv.Itoa(col))
-		overlay.WriteString("H")
-		overlay.WriteString(c.data)
+		placements = append(placements, components.OverlayPlacement{
+			ID:  c.id,
+			Row: row,
+			Col: col,
+		})
 	}
 
 	base := rendered
-	if len(coverRenders) > 0 {
-		base = rendered + overlay.String()
+	if len(placements) > 0 {
+		base = rendered + m.coverRenderer.Overlay(placements)
 	}
 	return base
 }
@@ -1098,80 +1078,26 @@ func (m *Model) syncVisibleWidget() tea.Cmd {
 		return nil
 	}
 	booksToLoad := m.books[m.start:m.end]
-	curWidth := m.dynamicCardWidth
-	curHeight := m.dynamicCardHeight
-	curCellPixelWidth := m.cellPixelWidth
-	curCellPixelHeight := m.cellPixelHeight
-	protocol := termimg.DetectProtocol()
-	features := termimg.QueryTerminalFeatures()
-	targetPixelWidth := curWidth
-	targetPixelHeight := curHeight
-	if curCellPixelWidth > 0 && curCellPixelHeight > 0 {
-		targetPixelWidth = curWidth * curCellPixelWidth
-		targetPixelHeight = curHeight * curCellPixelHeight
-	} else if features != nil && features.FontWidth > 0 && features.FontHeight > 0 {
-		targetPixelWidth = curWidth * features.FontWidth
-		targetPixelHeight = curHeight * features.FontHeight
-	}
-	if targetPixelWidth <= 0 {
-		targetPixelWidth = curWidth
-	}
-	if targetPixelHeight <= 0 {
-		targetPixelHeight = curHeight
-	}
-
-	cmds := make([]tea.Cmd, 0, len(booksToLoad))
+	tasks := make([]components.RenderTask, 0, len(booksToLoad))
 	for i, book := range booksToLoad {
 		absoluteIndex := i + m.start
 		path, err := m.handler.SelectBookPath(book.BookFile)
 		if err != nil || path == "" {
 			continue
 		}
-		cacheKey := fmt.Sprintf("%s|%s|%dx%d|%dx%d|%v", book.BookFile, path, curWidth, curHeight, targetPixelWidth, targetPixelHeight, protocol)
-		if cached, ok := m.coverRenderCache[cacheKey]; ok {
-			m.covers[absoluteIndex] = cached
-			continue
-		}
-		if _, pending := m.coverRenderPending[cacheKey]; pending {
-			continue
-		}
-		m.coverRenderPending[cacheKey] = struct{}{}
-
-		idx := absoluteIndex
-		coverPath := path
-		key := cacheKey
-		cmds = append(cmds, func() tea.Msg {
-			srcImage, err := imaging.Open(coverPath)
-			if err != nil {
-				return coverLoadedMsg{index: idx, key: key, data: ""}
-			}
-
-			resizedImage := imaging.Fit(srcImage, targetPixelWidth, targetPixelHeight, imaging.Lanczos)
-			if resizedImage.Bounds().Dx() != targetPixelWidth || resizedImage.Bounds().Dy() != targetPixelHeight {
-				canvas := imaging.New(targetPixelWidth, targetPixelHeight, color.NRGBA{R: 10, G: 10, B: 10, A: 255})
-				resizedImage = imaging.PasteCenter(canvas, resizedImage)
-			}
-
-			img := termimg.New(resizedImage).Scale(termimg.ScaleNone)
-			if protocol == termimg.Halfblocks {
-				img = img.Dither(true).DitherMode(termimg.DitherFloydSteinberg)
-			}
-
-			cover := termimg.NewImageWidget(img)
-			cover.SetSize(curWidth, curHeight).SetProtocol(protocol)
-			if cover == nil {
-				return coverLoadedMsg{index: idx, key: key, data: ""}
-			}
-			coverRendered, err := cover.Render()
-			if err != nil {
-				log.Printf("Err rendering cover: %v ", err)
-				return coverLoadedMsg{index: idx, key: key, data: ""}
-			}
-			return coverLoadedMsg{index: idx, key: key, data: coverRendered}
+		tasks = append(tasks, components.RenderTask{
+			ID:         strconv.Itoa(absoluteIndex),
+			SourcePath: path,
 		})
 	}
 
-	return tea.Batch(cmds...)
+	return m.coverRenderer.Sync(components.SyncRequest{
+		Tasks:           tasks,
+		Width:           m.dynamicCardWidth,
+		Height:          m.dynamicCardHeight,
+		CellPixelWidth:  m.cellPixelWidth,
+		CellPixelHeight: m.cellPixelHeight,
+	})
 }
 
 func getCellPixelSize(cols, rows int) (int, int) {
@@ -1323,8 +1249,7 @@ func (m *Model) SetView(option string) tea.Cmd {
 	m.paginator.SetTotalPages(len(m.books))
 	m.paginator.Page = 0
 	m.cursor = 0
-	m.covers = make(map[int]string)
-	m.coverRenderPending = make(map[string]struct{})
+	m.coverRenderer.ResetVisible()
 	return tea.Batch(tea.ClearScreen, m.syncVisibleWidget())
 }
 
