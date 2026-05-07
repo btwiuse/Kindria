@@ -1,21 +1,21 @@
 package main
 
 import (
-	"Kindria/internal/tui/components"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	imagerenderer "github.com/btwiuse/Kindria/image-renderer"
 )
 
 const demoTaskID = "demo-image"
 
 type model struct {
-	renderer *components.ImageRenderer
+	renderer *imagerenderer.ImageRenderer
 	image    string
 }
 
@@ -24,15 +24,16 @@ func newModel() (*model, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &model{
-		renderer: components.NewImageRenderer(),
+		renderer: imagerenderer.New(),
 		image:    imgPath,
 	}, nil
 }
 
 func (m *model) Init() tea.Cmd {
-	return m.renderer.Sync(components.SyncRequest{
-		Tasks: []components.RenderTask{
+	return m.renderer.Sync(imagerenderer.SyncRequest{
+		Tasks: []imagerenderer.RenderTask{
 			{
 				ID:         demoTaskID,
 				CacheKey:   "minimal-demo|" + m.image,
@@ -50,9 +51,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "ctrl+c", "q":
+		case "q", "ctrl+c":
 			_ = os.Remove(m.image)
 			return m, tea.Quit
 		}
@@ -61,18 +62,21 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *model) View() string {
+func (m *model) View() tea.View {
 	frame := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		Width(40).
 		Height(18).
 		Render("")
 
-	base := "ImageRenderer minimal example (press q to quit)\n\n" + frame
-	overlay := m.renderer.Overlay([]components.OverlayPlacement{
+	base := "ImageRenderer minimal example (Bubble Tea v2, press q to quit)\n\n" + frame
+	overlay := m.renderer.Overlay([]imagerenderer.OverlayPlacement{
 		{ID: demoTaskID, Row: 4, Col: 3},
 	})
-	return base + overlay
+
+	view := tea.NewView(base + overlay)
+	view.AltScreen = true
+	return view
 }
 
 func createDemoImage() (string, error) {
@@ -86,7 +90,7 @@ func createDemoImage() (string, error) {
 		}
 	}
 
-	f, err := os.CreateTemp("", "kindria-image-renderer-*.png")
+	f, err := os.CreateTemp("", "kindria-image-renderer-v2-*.png")
 	if err != nil {
 		return "", err
 	}
@@ -106,7 +110,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Println("program failed:", err)
 		os.Exit(1)

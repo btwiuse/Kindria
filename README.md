@@ -70,15 +70,16 @@ go run .
 
 - Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - Development setup and workflows: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
-- Image renderer component (design + usage): [`docs/IMAGE_RENDERER_COMPONENT.md`](docs/IMAGE_RENDERER_COMPONENT.md)
+- Standalone Bubble Tea v2 image renderer module: [`image-renderer/README.md`](image-renderer/README.md)
 - In-app key hints are shown in each screen (Library, Add Book, Kindle, Themes)
 
 ## Examples
 
-- Minimal reusable image component example:
+- Standalone Bubble Tea v2 image renderer example:
 
   ```bash
-  go run ./examples/image_renderer_minimal
+  cd ./image-renderer
+  go run ./examples/minimal
   ```
 
 ## Terminal Notes
